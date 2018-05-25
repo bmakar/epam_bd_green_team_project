@@ -2,6 +2,9 @@ package com.onefoursix;
 
 import java.io.IOException;
 import java.net.URI;
+import java.util.Arrays;
+import java.util.List;
+import java.util.stream.Collectors;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
@@ -9,55 +12,42 @@ import org.apache.hadoop.hdfs.DFSInotifyEventInputStream;
 import org.apache.hadoop.hdfs.client.HdfsAdmin;
 import org.apache.hadoop.hdfs.inotify.Event;
 import org.apache.hadoop.hdfs.inotify.Event.CreateEvent;
-import org.apache.hadoop.hdfs.inotify.Event.UnlinkEvent;
 import org.apache.hadoop.hdfs.inotify.EventBatch;
 import org.apache.hadoop.hdfs.inotify.MissingEventsException;
 
+import static org.apache.hadoop.hdfs.inotify.Event.EventType.CREATE;
+
 public class HdfsINotifyExample {
 
-	public static void main(String[] args) throws IOException, InterruptedException, MissingEventsException {
+    public static void main(String[] args) throws IOException, InterruptedException, MissingEventsException {
 
-		long lastReadTxid = 0;
+        long lastReadTxid = 0;
 
-		if (args.length > 1) {
-			lastReadTxid = Long.parseLong(args[1]);
-		}
+        if (args.length > 1) {
+            lastReadTxid = Long.parseLong(args[1]);
+        }
 
-		System.out.println("lastReadTxid = " + lastReadTxid);
-		Configuration conf = new Configuration();
-		conf.addResource(new Path("file:///etc/hadoop/conf/hdfs-site.xml"));
-		conf.addResource(new Path("file:///etc/hadoop/conf/core-site.xml"));
-		HdfsAdmin admin = new HdfsAdmin(URI.create(args[0]), conf);
+        System.out.println("lastReadTxid = " + lastReadTxid);
+        Configuration conf = new Configuration();
+        conf.addResource(new Path("file:///etc/hadoop/conf/hdfs-site.xml"));
+        conf.addResource(new Path("file:///etc/hadoop/conf/core-site.xml"));
+        HdfsAdmin admin = new HdfsAdmin(URI.create(args[0]), conf);
 
-		DFSInotifyEventInputStream eventStream = admin.getInotifyEventStream(lastReadTxid);
+        DFSInotifyEventInputStream eventStream = admin.getInotifyEventStream(lastReadTxid);
 
-		while (true) {
-			EventBatch batch = eventStream.take();
-			System.out.println("TxId = " + batch.getTxid());
-
-			for (Event event : batch.getEvents()) {
-				System.out.println("event type = " + event.getEventType());
-				switch (event.getEventType()) {
-				case CREATE:
-					CreateEvent createEvent = (CreateEvent) event;
-					System.out.println("  path = " + createEvent.getPath());
-					System.out.println("  owner = " + createEvent.getOwnerName());
-					System.out.println("  ctime = " + createEvent.getCtime());
-					break;
-				case UNLINK:
-					UnlinkEvent unlinkEvent = (UnlinkEvent) event;
-					System.out.println("  path = " + unlinkEvent.getPath());
-					System.out.println("  timestamp = " + unlinkEvent.getTimestamp());
-					break;
-				
-				case APPEND:
-				case CLOSE:
-				case RENAME:
-				default:
-					break;
-				}
-			}
-		}
-	}
+        while (true) {
+            EventBatch batch = eventStream.take();
+            System.out.println("TxId = " + batch.getTxid());
+            List<Event> events = Arrays.stream(batch.getEvents()).
+                    filter(event -> event.getEventType() == CREATE).collect(Collectors.toList());
+            for (Event event : events) {
+                CreateEvent createEvent = (CreateEvent) event;
+                if (createEvent.getPath().matches("^.*?\\broot-distcp\\b.*?\\bSUCCEEDED\\b.*?$")) {
+                    System.out.println(createEvent.getPath());
+                    System.out.println(createEvent.getOwnerName());
+                }
+            }
+        }
+    }
 }
 
